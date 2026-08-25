@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AQUAFONOMETR — Проверка скорости</title>
+    <link rel="stylesheet" href="/static/css/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #ebeff1;
+            color: #4a4a4a;
+            min-height: 100vh;
+        }
+        .wrapper {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 20px 16px;
+        }
+        .logo-area {
+            text-align: center;
+            padding: 24px 0 16px;
+        }
+        .logo-area h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fb6f07;
+            letter-spacing: 0.5px;
+        }
+        .logo-area p {
+            font-size: 13px;
+            color: #9b9b9b;
+            margin-top: 4px;
+            font-weight: 500;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 4px;
+            padding: 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 0 2px 0 rgba(0,0,0,0.3);
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #4a4a4a;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #dedede;
+            border-radius: 4px;
+            font-size: 16px;
+            font-family: 'Montserrat', sans-serif;
+            color: #4a4a4a;
+            background: #fff;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus {
+            border-color: #3574a9;
+        }
+        .input-group input::placeholder {
+            color: #b6b6b6;
+        }
+        .gps-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #9b9b9b;
+            margin-bottom: 20px;
+        }
+        .gps-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e74c3c;
+            flex-shrink: 0;
+        }
+        .gps-dot.active {
+            background: #27ae60;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Montserrat', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .btn-start {
+            background: #fb6f07;
+            color: #fff;
+        }
+        .btn-start:hover {
+            background: #e06200;
+        }
+        .btn-start:disabled {
+            background: #ccc;
+            color: #999;
+            cursor: not-allowed;
+        }
+        .btn-reset {
+            background: #3574a9;
+            color: #fff;
+            margin-top: 10px;
+        }
+        .btn-reset:hover {
+            background: #2a5d87;
+        }
+        .btn-sm {
+            display: inline-block;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        .btn-green {
+            background: #27ae60;
+            color: #fff;
+        }
+        .btn-green:hover {
+            background: #1e8449;
+        }
+        .progress-container {
+            margin-bottom: 20px;
+        }
+        .progress-bar {
+            height: 4px;
+            background: #ebeff1;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #fb6f07;
+            border-radius: 2px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+        .progress-text {
+            font-size: 12px;
+            color: #9b9b9b;
+            text-align: center;
+            margin-top: 8px;
+        }
+        .speed-display {
+            text-align: center;
+            padding: 16px 0;
+        }
+        .speed-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #9b9b9b;
+            margin-bottom: 8px;
+        }
+        .speed-value {
+            font-size: 52px;
+            font-weight: 700;
+            line-height: 1;
+            color: #4a4a4a;
+        }
+        .speed-unit {
+            font-size: 14px;
+            color: #9b9b9b;
+            margin-top: 4px;
+            font-weight: 500;
+        }
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        .result-item {
+            text-align: center;
+            padding: 14px 8px;
+            background: #f5f7f9;
+            border-radius: 4px;
+        }
+        .result-item .value {
+            font-size: 22px;
+            font-weight: 700;
+            color: #4a4a4a;
+        }
+        .result-item .label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #9b9b9b;
+            margin-top: 4px;
+            letter-spacing: 0.5px;
+        }
+        .result-item.down .value { color: #27ae60; }
+        .result-item.up .value { color: #3574a9; }
+        .result-item.ping .value { color: #fb6f07; }
+        .quality-badge {
+            text-align: center;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 12px;
+        }
+        .quality-excellent { background: #e8f8ef; color: #27ae60; border: 1px solid #a3d9b1; }
+        .quality-good { background: #fef9e7; color: #f39c12; border: 1px solid #f5d77e; }
+        .quality-poor { background: #fde8e8; color: #e74c3c; border: 1px solid #f5b7b7; }
+        .map-container {
+            height: 200px;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #dedede;
+        }
+        .status-msg {
+            text-align: center;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .status-msg.ok {
+            background: #e8f8ef;
+            color: #27ae60;
+            border: 1px solid #a3d9b1;
+        }
+        .status-msg.error {
+            background: #fde8e8;
+            color: #e74c3c;
+            border: 1px solid #f5b7b7;
+        }
+        .hidden { display: none !important; }
+        .footer {
+            text-align: center;
+            padding: 16px 0;
+            font-size: 11px;
+            color: #b6b6b6;
+        }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 12px;
+        }
+        .history-item:last-child { border-bottom: none; }
+        .history-item .date { color: #9b9b9b; }
+        .history-item .speed { font-weight: 700; }
+        .card h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #4a4a4a;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper" id="resultArea">
+        <div class="logo-area">
+            <h1>AQUAFONOMETR</h1>
+            <p>Проверка скорости мобильного интернета</p>
+        </div>
+
+        <div id="statusMsg"></div>
+
+        <div class="card" id="inputCard">
+            <div class="input-group">
+                <label>Номер телефона</label>
+                <input type="tel" id="phoneInput" value="+7 (940) " placeholder="+7 (940) XXX-XX-XX" autocomplete="tel" inputmode="tel" />
+            </div>
+            <div class="gps-status">
+                <div class="gps-dot" id="gpsDot"></div>
+                <span id="gpsText">GPS не определён</span>
+            </div>
+            <button class="btn btn-start" id="startBtn" disabled>Начать тест</button>
+        </div>
+
+        <div class="card hidden" id="testCard">
+            <div class="progress-container">
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="progress-text" id="progressText">Подготовка...</div>
+            </div>
+            <div class="speed-display">
+                <div class="speed-label" id="speedLabel">СКАЧИВАНИЕ</div>
+                <div class="speed-value" id="speedValue">0</div>
+                <div class="speed-unit">Мбит/с</div>
+            </div>
+            <div class="results-grid hidden" id="resultsGrid">
+                <div class="result-item down">
+                    <div class="value" id="resultDown">&mdash;</div>
+                    <div class="label">Загрузка</div>
+                </div>
+                <div class="result-item up">
+                    <div class="value" id="resultUp">&mdash;</div>
+                    <div class="label">Отдача</div>
+                </div>
+                <div class="result-item ping">
+                    <div class="value" id="resultPing">&mdash;</div>
+                    <div class="label">Пинг</div>
+                </div>
+                <div class="result-item ping">
+                    <div class="value" id="resultJitter">&mdash;</div>
+                    <div class="label">Джиттер</div>
+                </div>
+            </div>
+            <div id="qualityBadge"></div>
+            <div style="text-align:center;" id="saveBtnWrap" class="hidden">
+                <button class="btn btn-sm btn-green" onclick="saveResultPNG()">Сохранить как PNG</button>
+            </div>
+        </div>
+
+        <div class="card hidden" id="mapCard">
+            <div class="map-container" id="map"></div>
+        </div>
+
+        <div class="card hidden" id="historyCard">
+            <h3>Мои тесты</h3>
+            <div id="historyList"></div>
+        </div>
+
+        <div class="card hidden" id="doneCard">
+            <button class="btn btn-start" onclick="resetAll()">Тестировать снова</button>
+        </div>
+
+        <div class="footer">Проверка качества сети</div>
+    </div>
+
+    <script src="/static/js/leaflet.js"></script>
+    <script>
+        let lat = null, lng = null, gpsReady = false;
+        let map = null, marker = null;
+        let downloadSpeed = 0, uploadSpeed = 0, pingValue = 0, jitterValue = 0;
+
+        const phoneInput = document.getElementById('phoneInput');
+        const startBtn = document.getElementById('startBtn');
+        const gpsDot = document.getElementById('gpsDot');
+        const gpsText = document.getElementById('gpsText');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const speedValue = document.getElementById('speedValue');
+        const speedLabel = document.getElementById('speedLabel');
+        const statusMsg = document.getElementById('statusMsg');
+
+        function getSpeedColor(mbps) {
+            if (mbps >= 50) return '#27ae60';
+            if (mbps >= 20) return '#f39c12';
+            if (mbps >= 5)  return '#e67e22';
+            if (mbps >= 1)  return '#e74c3c';
+            return '#000000';
+        }
+
+
+        function getQuality(mbps) {
+            if (mbps >= 20) return { text: 'Отлично', cls: 'quality-excellent' };
+            if (mbps >= 5)  return { text: 'Нормально', cls: 'quality-good' };
+            return { text: 'Плохо', cls: 'quality-poor' };
+        }
+
+        function formatPhone(v) {
+            let d = v.replace(/\D/g, '');
+            if (d.length === 0) return '';
+            if (d[0] === '8') d = '7' + d.slice(1);
+            let r = '';
+            if (d.length > 0) r = '+' + d[0];
+            if (d.length > 1) r += ' (' + d.slice(1, 4);
+            if (d.length > 4) r += ') ' + d.slice(4, 7);
+            if (d.length > 7) r += '-' + d.slice(7, 9);
+            if (d.length > 9) r += '-' + d.slice(9, 11);
+            return r;
+        }
+
+        phoneInput.addEventListener('input', () => {
+            let pos = phoneInput.selectionStart;
+            let prev = phoneInput.value;
+            phoneInput.value = formatPhone(phoneInput.value);
+            let diff = phoneInput.value.length - prev.length;
+            phoneInput.setSelectionRange(pos + diff, pos + diff);
+            startBtn.disabled = phoneInput.value.replace(/\D/g, '').length < 10;
+        });
+
+        function initMap() {
+            if (map) return;
+            map = L.map('map', { zoomControl: false }).setView([lat || 43.0, lng || 41.0], 13);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
+                attribution: '&copy; CARTO &copy; OpenStreetMap', maxZoom: 19, subdomains: 'abcd'
+            }).addTo(map);
+            L.control.zoom({ position: 'topright' }).addTo(map);
+            setTimeout(() => map.invalidateSize(), 100);
+        }
+
+        function updateMap() {
+            if (!lat || !lng) return;
+            initMap();
+            if (marker) map.removeLayer(marker);
+            const color = getSpeedColor(downloadSpeed);
+            marker = L.circleMarker([lat, lng], {
+                radius: 5, fillColor: color, color: '#fff',
+                weight: 1, opacity: 1, fillOpacity: 0.9
+            }).addTo(map);
+            marker.bindPopup(
+                '<b>' + phoneInput.value + '</b><br>' +
+                '&darr; ' + downloadSpeed.toFixed(1) + ' Мбит/с<br>' +
+                '&uarr; ' + uploadSpeed.toFixed(1) + ' Мбит/с<br>' +
+                'Пинг: ' + pingValue.toFixed(0) + ' мс<br>' +
+                'Джиттер: ' + jitterValue + ' мс'
+            );
+            map.setView([lat, lng], 15);
+            setTimeout(() => map.invalidateSize(), 200);
+        }
+
+        function showStatus(msg, isError) {
+            statusMsg.className = isError ? 'status-msg error' : 'status-msg ok';
+            statusMsg.innerHTML = msg;
+            statusMsg.classList.remove('hidden');
+        }
+
+        async function requestGPS() {
+            return new Promise((resolve, reject) => {
+                if (!navigator.geolocation) {
+                    reject(new Error('GPS не поддерживается'));
+                    return;
+                }
+                if (gpsReady && lat !== null) {
+                    resolve();
+                    return;
+                }
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        lat = pos.coords.latitude;
+                        lng = pos.coords.longitude;
+                        gpsDot.classList.add('active');
+                        gpsText.textContent = 'GPS: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+                        gpsReady = true;
+                        resolve();
+                    },
+                    err => {
+                        gpsDot.classList.remove('active');
+                        gpsText.textContent = 'GPS не определён';
+                        reject(new Error('Не удалось определить местоположение. Включите GPS и разрешите доступ.'));
+                    },
+                    { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+                );
+            });
+        }
+
+        function warmupGPS() {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    lat = pos.coords.latitude;
+                    lng = pos.coords.longitude;
+                    gpsDot.classList.add('active');
+                    gpsText.textContent = 'GPS: ' + lat.toFixed(5) + ', ' + lng.toFixed(5);
+                    gpsReady = true;
+                },
+                () => {},
+                { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+            );
+        }
+
+        async function measurePing() {
+            const iterations = 10;
+            const times = [];
+            for (let i = 0; i < iterations; i++) {
+                const start = performance.now();
+                await fetch('/speedtest/ping?_=' + Date.now(), { cache: 'no-store' });
+                times.push(performance.now() - start);
+            }
+            times.sort((a, b) => a - b);
+            const min = times[0];
+            const avg = times.reduce((a, b) => a + b, 0) / times.length;
+            let jitter = 0;
+            for (let i = 1; i < times.length; i++) {
+                jitter += Math.abs(times[i] - times[i - 1]);
+            }
+            jitter /= (times.length - 1);
+            return { min: Math.round(min), avg: Math.round(avg), jitter: Math.round(jitter) };
+        }
+
+        async function measureDownload(progressCb) {
+            const PARALLEL = 4;
+            const WARMUP_SEC = 3;
+            const MEASURE_SEC = 10;
+            const TOTAL_SEC = WARMUP_SEC + MEASURE_SEC;
+            progressCb('Прогрев соединений...');
+            const start = performance.now();
+            let measuredBytes = 0;
+            let measuring = false;
+            const controllers = [];
+
+            const workers = [];
+            for (let i = 0; i < PARALLEL; i++) {
+                const ctrl = new AbortController();
+                controllers.push(ctrl);
+                workers.push((async () => {
+                    try {
+                        const resp = await fetch('/speedtest/stream?_=' + Date.now() + i, { cache: 'no-store', signal: ctrl.signal });
+                        const reader = resp.body.getReader();
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            const elapsed = (performance.now() - start) / 1000;
+                            if (elapsed > WARMUP_SEC && elapsed < TOTAL_SEC) {
+                                measuredBytes += value.length;
+                            }
+                        }
+                    } catch (e) {}
+                })());
+            }
+
+            while (performance.now() - start < TOTAL_SEC * 1000) {
+                await new Promise(r => setTimeout(r, 100));
+                const elapsed = (performance.now() - start) / 1000;
+                if (elapsed < WARMUP_SEC) {
+                    progressCb('Прогрев: ' + Math.ceil(WARMUP_SEC - elapsed) + 'с');
+                } else {
+                    if (!measuring) { measuring = true; progressCb('Измерение...'); }
+                    const mbps = (measuredBytes * 8) / ((elapsed - WARMUP_SEC) * 1000000);
+                    speedValue.textContent = mbps >= 100 ? Math.round(mbps) : mbps.toFixed(1);
+                    speedValue.style.color = getSpeedColor(mbps);
+                    progressCb('Скачивание: ' + mbps.toFixed(1) + ' Мбит/с');
+                }
+            }
+
+            controllers.forEach(c => c.abort());
+            await Promise.allSettled(workers);
+            return (measuredBytes * 8) / (MEASURE_SEC * 1000000);
+        }
+
+        function fillRandom(buf) {
+            const view = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
+            const maxChunk = 65536;
+            for (let i = 0; i < view.length; i += maxChunk) {
+                crypto.getRandomValues(view.subarray(i, Math.min(i + maxChunk, view.length)));
+            }
+        }
+
+        async function measureUpload(progressCb) {
+            const PARALLEL = 4;
+            const TEST_DURATION = 10;
+            const WARMUP = 2;
+            const CHUNK_KB = 256;
+            const CHUNK_SIZE = CHUNK_KB * 1024;
+            progressCb('Загрузка...');
+            const start = performance.now();
+            let totalBytes = 0;
+
+            const workers = [];
+            for (let i = 0; i < PARALLEL; i++) {
+                workers.push((async () => {
+                    try {
+                        const buf = new ArrayBuffer(CHUNK_SIZE);
+                        fillRandom(buf);
+                        while (performance.now() - start < TEST_DURATION * 1000) {
+                            const blob = new Blob([buf]);
+                            await fetch('/speedtest/upload', {
+                                method: 'POST', body: blob, cache: 'no-store',
+                                headers: { 'Content-Type': 'application/octet-stream' }
+                            });
+                            totalBytes += CHUNK_SIZE;
+                        }
+                    } catch (e) {}
+                })());
+            }
+
+            while (performance.now() - start < TEST_DURATION * 1000) {
+                await new Promise(r => setTimeout(r, 100));
+                const elapsed = (performance.now() - start) / 1000;
+                if (elapsed > WARMUP) {
+                    const mbps = (totalBytes * 8) / (elapsed * 1000000);
+                    speedValue.textContent = mbps >= 100 ? Math.round(mbps) : mbps.toFixed(1); speedValue.style.color = getSpeedColor(mbps);
+                    progressCb('Загрузка: ' + mbps.toFixed(1) + ' Мбит/с');
+                }
+            }
+
+            await Promise.allSettled(workers);
+            const elapsed = (performance.now() - start) / 1000;
+            const measureTime = elapsed - WARMUP;
+            if (measureTime <= 0) return 0;
+            return (totalBytes * 8) / (measureTime * 1000000);
+        }
+
+        function loadHistory() {
+            const phone = phoneInput.value.trim();
+            const history = JSON.parse(localStorage.getItem('aq_history_' + phone) || '[]');
+            if (history.length === 0) {
+                document.getElementById('historyCard').classList.add('hidden');
+                return;
+            }
+            const list = document.getElementById('historyList');
+            list.innerHTML = history.slice(0, 5).map(h =>
+                '<div class="history-item">' +
+                '<span class="date">' + h.date + '</span>' +
+                '<span class="speed" style="color:' + getSpeedColor(h.down) + '">' + h.down.toFixed(1) + ' Мбит/с</span>' +
+                '</div>'
+            ).join('');
+            document.getElementById('historyCard').classList.remove('hidden');
+        }
+
+        function saveToHistory() {
+            const phone = phoneInput.value.trim();
+            const key = 'aq_history_' + phone;
+            const history = JSON.parse(localStorage.getItem(key) || '[]');
+            history.unshift({
+                date: new Date().toLocaleString('ru-RU'),
+                down: downloadSpeed,
+                up: uploadSpeed,
+                ping: pingValue,
+                jitter: jitterValue
+            });
+            localStorage.setItem(key, JSON.stringify(history.slice(0, 50)));
+        }
+
+        function saveResultPNG() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 480;
+            canvas.height = 560;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#ebeff1';
+            ctx.fillRect(0, 0, 480, 560);
+
+            ctx.fillStyle = '#fb6f07';
+            ctx.font = 'bold 24px Montserrat, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('AQUAFONOMETR', 240, 45);
+
+            ctx.fillStyle = '#4a4a4a';
+            ctx.font = '13px Montserrat, sans-serif';
+            ctx.fillText('Проверка скорости', 240, 70);
+
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(40, 90, 400, 200);
+            ctx.strokeStyle = '#dedede';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(40, 90, 400, 200);
+
+            ctx.fillStyle = '#fb6f07';
+            ctx.font = '11px Montserrat, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('ПИНГ', 240, 120);
+            ctx.font = 'bold 42px Montserrat, sans-serif';
+            ctx.fillText(pingValue.toFixed(0), 240, 175);
+            ctx.fillStyle = '#9b9b9b';
+            ctx.font = '13px Montserrat, sans-serif';
+            ctx.fillText('мс', 240, 200);
+
+            ctx.fillStyle = '#27ae60';
+            ctx.font = 'bold 36px Montserrat, sans-serif';
+            ctx.fillText('\u2193 ' + downloadSpeed.toFixed(1), 140, 260);
+            ctx.fillStyle = '#3574a9';
+            ctx.fillText('\u2191 ' + uploadSpeed.toFixed(1), 340, 260);
+            ctx.fillStyle = '#9b9b9b';
+            ctx.font = '11px Montserrat, sans-serif';
+            ctx.fillText('Мбит/с', 140, 285);
+            ctx.fillText('Мбит/с', 340, 285);
+
+            const q = getQuality(downloadSpeed);
+            ctx.fillStyle = q.cls === 'quality-excellent' ? '#27ae60' : q.cls === 'quality-good' ? '#f39c12' : '#e74c3c';
+            ctx.font = 'bold 16px Montserrat, sans-serif';
+            ctx.fillText(q.text, 240, 340);
+
+            ctx.fillStyle = '#9b9b9b';
+            ctx.font = '11px Montserrat, sans-serif';
+            ctx.fillText('Телефон: ' + phoneInput.value, 240, 380);
+            if (lat && lng) {
+                ctx.fillText('Координаты: ' + lat.toFixed(4) + ', ' + lng.toFixed(4), 240, 400);
+            }
+            ctx.fillText(new Date().toLocaleString('ru-RU'), 240, 430);
+
+            const link = document.createElement('a');
+            link.download = 'aquafonometr_' + Date.now() + '.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        startBtn.addEventListener('click', runTest);
+
+        async function runTest() {
+            const phone = phoneInput.value.replace(/\D/g, '');
+            if (phone.length < 10) { showStatus('Введите номер телефона', true); return; }
+
+            startBtn.disabled = true;
+            document.getElementById('inputCard').style.opacity = '0.5';
+            document.getElementById('testCard').classList.remove('hidden');
+            document.getElementById('historyCard').classList.add('hidden');
+            statusMsg.classList.add('hidden');
+            document.getElementById('qualityBadge').innerHTML = '';
+            document.getElementById('saveBtnWrap').classList.add('hidden');
+
+            try {
+                progressFill.style.width = '10%';
+                progressText.textContent = 'Определение местоположения...';
+                await requestGPS();
+
+                speedLabel.textContent = 'ПИНГ';
+                progressFill.style.width = '20%';
+                progressText.textContent = 'Измерение пинга (10 замеров)...';
+                const pingResult = await measurePing();
+                pingValue = pingResult.avg;
+                jitterValue = pingResult.jitter;
+                speedValue.textContent = pingResult.avg + ' / ' + pingResult.jitter;
+                speedValue.style.color = '#fb6f07';
+                progressText.textContent = 'Пинг: ' + pingResult.avg + 'мс (min ' + pingResult.min + ', jitter ' + pingResult.jitter + ')';
+                await new Promise(r => setTimeout(r, 800));
+
+                speedLabel.textContent = 'СКАЧИВАНИЕ';
+                progressFill.style.width = '35%';
+                downloadSpeed = await measureDownload(msg => { progressText.textContent = msg; });
+                speedValue.textContent = downloadSpeed.toFixed(1);
+                speedValue.style.color = getSpeedColor(downloadSpeed);
+                progressFill.style.width = '70%';
+                await new Promise(r => setTimeout(r, 800));
+
+                speedLabel.textContent = 'ОТДАЧА';
+                progressText.textContent = 'Тест загрузки...';
+                uploadSpeed = await measureUpload(msg => { progressText.textContent = msg; });
+                speedValue.textContent = uploadSpeed.toFixed(1);
+                speedValue.style.color = getSpeedColor(uploadSpeed);
+                progressFill.style.width = '90%';
+                await new Promise(r => setTimeout(r, 800));
+
+                progressText.textContent = 'Сохранение результатов...';
+                progressFill.style.width = '100%';
+
+                const resp = await fetch('/api/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone: phoneInput.value.trim(),
+                        latitude: lat || 0,
+                        longitude: lng || 0,
+                        download_speed: downloadSpeed,
+                        upload_speed: uploadSpeed,
+                        ping: pingValue
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || 'Ошибка сервера');
+                }
+
+                document.getElementById('resultDown').textContent = downloadSpeed.toFixed(1);
+                document.getElementById('resultUp').textContent = uploadSpeed.toFixed(1);
+                document.getElementById('resultPing').textContent = pingValue.toFixed(0);
+                document.getElementById('resultJitter').textContent = jitterValue + 'мс';
+                document.getElementById('resultsGrid').classList.remove('hidden');
+
+                const q = getQuality(downloadSpeed);
+                document.getElementById('qualityBadge').innerHTML =
+                    '<div class="quality-badge ' + q.cls + '">' + q.text + '</div>';
+
+                document.getElementById('saveBtnWrap').classList.remove('hidden');
+                document.getElementById('mapCard').classList.remove('hidden');
+                updateMap();
+                document.getElementById('doneCard').classList.remove('hidden');
+                showStatus('Результаты сохранены. Спасибо!', false);
+
+                saveToHistory();
+        loadHistory();
+        warmupGPS();
+
+            } catch (e) {
+                showStatus('Ошибка: ' + e.message, true);
+                startBtn.disabled = false;
+                document.getElementById('inputCard').style.opacity = '1';
+            }
+        }
+
+        function resetAll() {
+            document.getElementById('testCard').classList.add('hidden');
+            document.getElementById('mapCard').classList.add('hidden');
+            document.getElementById('doneCard').classList.add('hidden');
+            document.getElementById('resultsGrid').classList.add('hidden');
+            document.getElementById('qualityBadge').innerHTML = '';
+            document.getElementById('saveBtnWrap').classList.add('hidden');
+            statusMsg.classList.add('hidden');
+            document.getElementById('inputCard').style.opacity = '1';
+            progressFill.style.width = '0%';
+            speedValue.textContent = '0';
+            speedValue.style.color = '#4a4a4a';
+            jitterValue = 0;
+            startBtn.disabled = false;
+            loadHistory();
+        }
+
+        loadHistory();
+    </script>
+</body>
+</html>

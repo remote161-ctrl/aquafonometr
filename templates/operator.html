@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AQUAFONOMETR — Панель оператора</title>
+    <link rel="stylesheet" href="/static/css/leaflet.css" />
+    <link rel="stylesheet" href="/static/css/MarkerCluster.css" />
+    <link rel="stylesheet" href="/static/css/MarkerCluster.Default.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap&subset=cyrillic" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: '''Montserrat''', -apple-system, BlinkMacSystemFont, sans-serif; background: #ebeff1; color: #4a4a4a; height: 100vh; overflow: hidden; }
+
+        #loginOverlay { position: fixed; inset: 0; background: #ebeff1; display: flex; align-items: center; justify-content: center; z-index: 10000; }
+        .login-box { background: #fff; border-radius: 4px; padding: 40px; width: 360px; box-shadow: 0 0 2px 0 rgba(0,0,0,0.3); }
+        .login-box h2 { text-align: center; margin-bottom: 24px; font-size: 22px; font-weight: 700; color: #fb6f07; }
+        .login-box input { width: 100%; padding: 12px 14px; border: 1px solid #dedede; border-radius: 4px; background: #fff; color: #4a4a4a; font-size: 15px; font-family: '''Montserrat''', sans-serif; margin-bottom: 12px; outline: none; }
+        .login-box input:focus { border-color: #3574a9; }
+        .login-box input::placeholder { color: #b6b6b6; }
+        .login-box button { width: 100%; padding: 12px; border: none; border-radius: 4px; background: #fb6f07; color: #fff; font-size: 14px; font-weight: 600; font-family: '''Montserrat''', sans-serif; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
+        .login-box button:hover { background: #e06200; }
+        .login-error { color: #e74c3c; font-size: 13px; text-align: center; margin-top: 8px; display: none; }
+
+        #app { display: none; height: 100vh; }
+        #map { position: absolute; inset: 0; z-index: 1; }
+
+        .panel { position: absolute; z-index: 1000; background: #fff; border-radius: 4px; padding: 16px; box-shadow: 0 0 2px 0 rgba(0,0,0,0.3); }
+
+        .filter-panel { top: 12px; left: 12px; width: 280px; max-height: calc(100vh - 24px); overflow-y: auto; }
+        .results-list { margin-top: 10px; border-top: 1px solid #dedede; padding-top: 8px; }
+        .results-list h4 { font-size: 10px; color: #9b9b9b; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .results-scroll { max-height: 260px; overflow-y: auto; }
+        .result-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: background 0.15s; }
+        .result-row:hover { background: #f0f4f7; }
+        .result-row .r-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .result-row .r-info { flex: 1; min-width: 0; }
+        .result-row .r-phone { font-weight: 600; color: #4a4a4a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .result-row .r-date { font-size: 10px; color: #9b9b9b; }
+        .result-row .r-speed { font-weight: 700; white-space: nowrap; }
+        .result-row .r-speeds { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: 10px; line-height: 1.3; }
+        .result-row .r-speeds span { font-weight: 600; white-space: nowrap; }
+        .filter-panel h3 { font-size: 14px; margin-bottom: 12px; color: #4a4a4a; font-weight: 700; }
+        .filter-row { margin-bottom: 10px; }
+        .filter-row label { display: block; font-size: 10px; color: #9b9b9b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600; }
+        .filter-row input { width: 100%; padding: 8px 10px; border: 1px solid #dedede; border-radius: 4px; background: #fff; color: #4a4a4a; font-size: 13px; font-family: '''Montserrat''', sans-serif; outline: none; }
+        .filter-row input:focus { border-color: #3574a9; }
+        .filter-btns { display: flex; gap: 8px; margin-top: 12px; }
+        .filter-btns button { flex: 1; padding: 8px; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: '''Montserrat''', sans-serif; cursor: pointer; text-transform: uppercase; letter-spacing: 0.3px; }
+        .btn-apply { background: #3574a9; color: #fff; }
+        .btn-apply:hover { background: #2a5d87; }
+        .btn-clear { background: #ebeff1; color: #9b9b9b; }
+        .btn-clear:hover { background: #dde2e6; }
+        .btn-export { background: #27ae60; color: #fff; }
+        .btn-export:hover { background: #1e8449; }
+        .btn-logout { background: #fb6f07; color: #fff; margin-top: 4px; width: 100%; padding: 8px; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; font-family: '''Montserrat''', sans-serif; cursor: pointer; text-transform: uppercase; letter-spacing: 0.3px; }
+        .btn-logout:hover { background: #e06200; }
+
+        .legend { bottom: 24px; right: 12px; padding: 14px 16px; min-width: 160px; }
+        .legend h4 { font-size: 10px; color: #9b9b9b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; color: #4a4a4a; }
+        .legend-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid #fff; box-shadow: 0 0 1px rgba(0,0,0,0.2); }
+
+        .stats-bar { top: 12px; right: 12px; min-width: 200px; }
+        .stats-bar h4 { font-size: 10px; color: #9b9b9b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 12px; margin: 4px 0; color: #4a4a4a; }
+        .stat-row .val { color: #fb6f07; font-weight: 700; }
+
+        .chart-panel { bottom: 24px; left: 310px; width: 320px; height: 180px; }
+        .chart-panel h4 { font-size: 10px; color: #9b9b9b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .chart-container { width: 100%; height: 140px; }
+
+        .leaflet-popup-content-wrapper { background: #fff; color: #4a4a4a; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .leaflet-popup-tip { background: #fff; }
+        .leaflet-popup-content { font-size: 13px; line-height: 1.6; font-family: '''Montserrat''', sans-serif; }
+        .leaflet-popup-content b { color: #fb6f07; }
+        .leaflet-popup-content small { color: #9b9b9b; }
+
+        .marker-cluster-small { background-color: rgba(39, 174, 96, 0.3); }
+        .marker-cluster-small div { background-color: rgba(39, 174, 96, 0.8); }
+        .marker-cluster-medium { background-color: rgba(251, 111, 7, 0.3); }
+        .marker-cluster-medium div { background-color: rgba(251, 111, 7, 0.8); }
+        .marker-cluster-large { background-color: rgba(53, 116, 169, 0.3); }
+        .marker-cluster-large div { background-color: rgba(53, 116, 169, 0.8); }
+        .marker-cluster { background-clip: padding-box; border-radius: 20px; }
+        .marker-cluster div { width: 36px; height: 36px; margin-left: 5px; margin-top: 5px; text-align: center; border-radius: 20px; font: 13px '''Montserrat''', sans-serif; color: #fff; }
+        .marker-cluster span { line-height: 36px; }
+
+        @media (max-width: 600px) {
+            .filter-panel { width: calc(100vw - 24px); }
+            .stats-bar { display: none; }
+            .chart-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loginOverlay">
+    <div class="login-box">
+        <h2>AQUAFONOMETR</h2>
+        <input type="text" id="loginUser" placeholder="Логин" autocomplete="username" />
+        <input type="password" id="loginPass" placeholder="Пароль" autocomplete="current-password" />
+        <button onclick="doLogin()">Войти</button>
+        <div class="login-error" id="loginError">Неверный логин или пароль</div>
+    </div>
+</div>
+
+<div id="app">
+    <div id="map"></div>
+
+    <div class="panel filter-panel" id="filterPanel">
+        <h3>Фильтры</h3>
+        <div class="filter-row">
+            <label>Дата от</label>
+            <input type="date" id="dateFrom" />
+        </div>
+        <div class="filter-row">
+            <label>Дата до</label>
+            <input type="date" id="dateTo" />
+        </div>
+        <div class="filter-row">
+            <label>Номер телефона</label>
+            <input type="tel" id="phoneFilter" placeholder="Часть номера..." />
+        </div>
+        <div class="filter-row">
+            <label>Скорость от (Мбит/с)</label>
+            <input type="number" id="speedMin" placeholder="0" min="0" step="0.1" />
+        </div>
+        <div class="filter-row">
+            <label>Скорость до (Мбит/с)</label>
+            <input type="number" id="speedMax" placeholder="999" min="0" step="0.1" />
+        </div>
+        <div class="filter-row" style="margin-top:12px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+                <input type="checkbox" id="showBts" checked onchange="toggleBts()" style="width:auto;" />
+                Показать БС
+            </label>
+        </div>
+        <div class="filter-row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+                <input type="checkbox" id="showHeat" checked onchange="toggleHeat()" style="width:auto;" />
+                Тепловая карта
+            </label>
+        </div>
+        <div class="filter-row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+                <input type="checkbox" id="autoRefresh" style="width:auto;" />
+                Автообновление (30с)
+            </label>
+        </div>
+        <div class="filter-btns">
+            <button class="btn-apply" onclick="applyFilters()">Применить</button>
+            <button class="btn-clear" onclick="clearFilters()">Сбросить</button>
+        </div>
+        <div class="filter-btns" style="margin-top:6px;">
+            <button class="btn-export" onclick="exportCSV()">Скачать CSV</button>
+        </div>
+        <button class="btn-logout" onclick="doLogout()">Выйти</button>
+        <div class="results-list" id="resultsList"></div>
+    </div>
+
+    <div class="panel stats-bar" id="statsBar">
+        <h4>Статистика</h4>
+        <div class="stat-row"><span>Всего тестов:</span><span class="val" id="statTotal">0</span></div>
+        <div class="stat-row"><span>Средняя ↓:</span><span class="val" id="statAvgDown">0</span></div>
+        <div class="stat-row"><span>Средняя ↑:</span><span class="val" id="statAvgUp">0</span></div>
+        <div class="stat-row"><span>Средний пинг:</span><span class="val" id="statAvgPing">0</span></div>
+        <div class="stat-row"><span>Макс ↓:</span><span class="val" id="statMaxDown">0</span></div>
+    </div>
+
+    <div class="panel chart-panel" id="chartPanel">
+        <h4>Скорость по дням</h4>
+        <div class="chart-container"><canvas id="speedChart"></canvas></div>
+    </div>
+
+    <div class="panel legend">
+        <h4>Скорость загрузки</h4>
+        <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div> &ge; 50 Мбит/с</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> 20–50 Мбит/с</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e67e22"></div> 5–20 Мбит/с</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> 1–5 Мбит/с</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#000"></div> &lt; 1 Мбит/с</div>
+        <hr style="border:none;border-top:1px solid #dedede;margin:8px 0;">
+        <div class="legend-item"><div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;"><img src="/static/img/tower.png" style="width:20px;height:20px;" /></div> Базовая станция</div>
+    </div>
+</div>
+
+    <script src="/static/js/leaflet.js"></script>
+    <script src="/static/js/leaflet.markercluster.js"></script>
+    <script src="/static/js/leaflet-heat.js"></script>
+    <script src="/static/js/chart.min.js"></script>
+<script>
+    let token = null;
+    let map = null;
+    let markers = L.markerClusterGroup({ maxClusterRadius: 40, spiderfyOnMaxZoom: true, showCoverageOnHover: true });
+    let btsLayer = L.layerGroup();
+    let btsSites = [];
+    let btsVisible = true;
+    let heatLayer = null;
+    let heatVisible = true;
+    let speedChart = null;
+    let autoRefreshTimer = null;
+    let filteredMarkers = [];
+    let filteredTests = [];
+
+    const btsIcon = L.icon({
+        iconUrl: '/static/img/tower.png',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+        popupAnchor: [0, -24]
+    });
+
+    function getSpeedColor(mbps) {
+        if (mbps >= 50) return '#27ae60';
+        if (mbps >= 20) return '#f39c12';
+        if (mbps >= 5)  return '#e67e22';
+        if (mbps >= 1)  return '#e74c3c';
+        return '#000000';
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        return R * 2 * Math.asin(Math.sqrt(a));
+    }
+
+    function findNearestBTS(lat, lon) {
+        let best = null, bestDist = Infinity;
+        for (const s of btsSites) {
+            const d = haversine(lat, lon, s.lat, s.lon);
+            if (d < bestDist) { bestDist = d; best = s; }
+        }
+        if (!best) return { name: '\u2014', distance: 0 };
+        const shortName = best.name.replace(/_BTS_HW$/, '').replace(/_/g, ' ');
+        return { name: shortName, distance: bestDist < 1 ? Math.round(bestDist * 1000) + ' м' : bestDist.toFixed(1) + ' км' };
+    }
+
+    async function loadBTS() {
+        try {
+            const r = await authFetch('/api/bts');
+            const d = await r.json();
+            btsLayer.clearLayers();
+            btsSites = d.sites;
+            d.sites.forEach(s => {
+                const m = L.marker([s.lat, s.lon], { icon: btsIcon });
+                const shortName = s.name.replace(/_BTS_HW$/, '').replace(/_/g, ' ');
+                m.bindPopup('<b>' + shortName + '</b><br><small>ID: ' + s.hostid + '</small>');
+                btsLayer.addLayer(m);
+            });
+            if (btsVisible) btsLayer.addTo(map);
+        } catch (e) {}
+    }
+
+    function toggleBts() {
+        btsVisible = document.getElementById('showBts').checked;
+        if (btsVisible) { btsLayer.addTo(map); } else { map.removeLayer(btsLayer); }
+    }
+
+    function toggleHeat() {
+        heatVisible = document.getElementById('showHeat').checked;
+        if (heatVisible && heatLayer) { heatLayer.addTo(map); }
+        else if (heatLayer) { map.removeLayer(heatLayer); }
+    }
+
+    function updateHeat(tests) {
+        if (heatLayer) map.removeLayer(heatLayer);
+        const points = tests.map(t => [t.latitude, t.longitude, Math.min(t.download_speed / 50, 1)]);
+        heatLayer = L.heatLayer(points, { radius: 25, blur: 15, maxZoom: 15, max: 1.0,
+            gradient: { 0.0: '#000000', 0.02: '#e74c3c', 0.04: '#e74c3c', 0.1: '#e67e22', 0.12: '#e67e22', 0.4: '#f39c12', 0.42: '#f39c12', 1.0: '#27ae60' }
+        });
+        if (heatVisible) heatLayer.addTo(map);
+    }
+
+    async function doLogin() {
+        const u = document.getElementById('loginUser').value;
+        const p = document.getElementById('loginPass').value;
+        try {
+            const r = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: u, password: p })
+            });
+            if (!r.ok) { document.getElementById('loginError').style.display = 'block'; return; }
+            const d = await r.json();
+            token = d.token;
+            localStorage.setItem('st_token', token);
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('app').style.display = 'block';
+            initMap();
+            await loadBTS();
+            loadData();
+            loadStats();
+            loadDailyChart();
+            setupAutoRefresh();
+        } catch (e) {
+            document.getElementById('loginError').style.display = 'block';
+        }
+    }
+
+    function doLogout() {
+        token = null;
+        localStorage.removeItem('st_token');
+        btsLayer.clearLayers();
+        stopAutoRefresh();
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('loginOverlay').style.display = 'flex';
+    }
+
+    async function authFetch(url, opts = {}) {
+        if (!opts.headers) opts.headers = {};
+        opts.headers['Authorization'] = 'Bearer ' + token;
+        const r = await fetch(url, opts);
+        if (r.status === 401) { doLogout(); throw new Error('Session expired'); }
+        return r;
+    }
+
+    function initMap() {
+        if (map) return;
+        map = L.map('map', { zoomControl: false }).setView([43.0, 41.0], 8);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
+            attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            maxZoom: 19,
+            subdomains: 'abcd'
+        }).addTo(map);
+        L.control.zoom({ position: 'topright' }).addTo(map);
+    }
+
+    async function loadData() {
+        const df = document.getElementById('dateFrom').value;
+        const dt = document.getElementById('dateTo').value;
+        const ph = document.getElementById('phoneFilter').value;
+        const smin = document.getElementById('speedMin').value;
+        const smax = document.getElementById('speedMax').value;
+
+        let params = new URLSearchParams();
+        if (df) params.set('date_from', df);
+        if (dt) params.set('date_to', dt);
+        if (ph) params.set('phone', ph);
+        if (smin) params.set('speed_min', smin);
+        if (smax) params.set('speed_max', smax);
+
+        const r = await authFetch('/api/results?' + params.toString());
+        const d = await r.json();
+        renderMarkers(d.results);
+        updateHeat(d.results);
+    }
+
+    function renderMarkers(tests) {
+        markers.clearLayers();
+        filteredMarkers = [];
+        filteredTests = tests;
+
+        tests.forEach((t, idx) => {
+            const color = getSpeedColor(t.download_speed);
+            const icon = L.divIcon({
+                className: '',
+                html: '<div style="width:10px;height:10px;border-radius:50%;background:' + color + ';border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,0.3);"></div>',
+                iconSize: [10, 10],
+                iconAnchor: [5, 5]
+            });
+
+            const m = L.marker([t.latitude, t.longitude], { icon: icon });
+
+            const date = t.created_at ? new Date(t.created_at).toLocaleString('ru-RU') : '\u2014';
+            const bts = findNearestBTS(t.latitude, t.longitude);
+            m.bindPopup(
+                '<b>' + t.phone + '</b><br>' +
+                '\u2193 ' + t.download_speed.toFixed(1) + ' \u041c\u0431\u0438\u0442/\u0441<br>' +
+                '\u2191 ' + t.upload_speed.toFixed(1) + ' \u041c\u0431\u0438\u0442/\u0441<br>' +
+                '\u041f\u0438\u043d\u0433: ' + (t.ping ? t.ping.toFixed(0) : '\u2014') + ' \u043c\u0441<br>' +
+                '\u0411\u0421: ' + bts.name + ' (' + bts.distance + ')<br>' +
+                '<small>' + date + '</small>'
+            );
+
+            filteredMarkers.push(m);
+            markers.addLayer(m);
+        });
+
+        map.addLayer(markers);
+        renderResultsList();
+    }
+
+    function renderResultsList() {
+        const el = document.getElementById('resultsList');
+        if (!filteredTests.length) { el.innerHTML = ''; return; }
+        let html = '<h4>Результаты (' + filteredTests.length + ')</h4><div class="results-scroll">';
+        filteredTests.forEach((t, idx) => {
+            const color = getSpeedColor(t.download_speed);
+            const date = t.created_at ? new Date(t.created_at).toLocaleDateString('ru-RU') : '';
+            html += '<div class="result-row" onclick="showOnMap(' + idx + ')">' +
+                '<div class="r-dot" style="background:' + color + '"></div>' +
+                '<div class="r-info"><div class="r-phone">' + t.phone + '</div><div class="r-date">' + date + '</div></div>' +
+                '<div class="r-speeds">' +
+                '<span style="color:#27ae60">\u2193' + t.download_speed.toFixed(1) + '</span>' +
+                '<span style="color:#3574a9">\u2191' + t.upload_speed.toFixed(1) + '</span>' +
+                '<span style="color:#fb6f07">' + (t.ping ? t.ping.toFixed(0) + '\u043c\u0441' : '\u2014') + '</span>' +
+                (t.jitter ? '<span style="color:#9b9b9b">j' + t.jitter.toFixed(0) + '\u043c\u0441</span>' : '') +
+                '</div>' +
+                '</div>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+    }
+
+    function showOnMap(idx) {
+        const m = filteredMarkers[idx];
+        if (!m) return;
+        map.setView(m.getLatLng(), 15);
+        setTimeout(() => m.openPopup(), 300);
+    }
+
+    async function loadStats() {
+        try {
+            const r = await authFetch('/api/stats');
+            const d = await r.json();
+            document.getElementById('statTotal').textContent = d.total || 0;
+            document.getElementById('statAvgDown').textContent = d.avg_down ? d.avg_down.toFixed(1) + ' Мбит/с' : '\u2014';
+            document.getElementById('statAvgUp').textContent = d.avg_up ? d.avg_up.toFixed(1) + ' Мбит/с' : '\u2014';
+            document.getElementById('statAvgPing').textContent = d.avg_ping ? d.avg_ping.toFixed(0) + ' мс' : '\u2014';
+            document.getElementById('statMaxDown').textContent = d.max_down ? d.max_down.toFixed(1) + ' Мбит/с' : '\u2014';
+        } catch (e) {}
+    }
+
+    async function loadDailyChart() {
+        try {
+            const r = await authFetch('/api/daily-stats?days=7');
+            const days = await r.json();
+            const labels = days.map(d => d.day.slice(5));
+            const downData = days.map(d => d.avg_down ? d.avg_down.toFixed(1) : 0);
+            const upData = days.map(d => d.avg_up ? d.avg_up.toFixed(1) : 0);
+            const counts = days.map(d => d.count);
+
+            if (speedChart) speedChart.destroy();
+            const ctx = document.getElementById('speedChart').getContext('2d');
+            speedChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: '↓ Загрузка', data: downData, backgroundColor: 'rgba(39,174,96,0.7)', borderRadius: 3 },
+                        { label: '↑ Отдача', data: upData, backgroundColor: 'rgba(53,116,169,0.7)', borderRadius: 3 },
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'top', labels: { font: { family: "'Montserrat'", size: 10 }, boxWidth: 12 } } },
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Мбит/с', font: { family: "'Montserrat'", size: 9 } },
+                            grid: { color: '#ebeff1' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        } catch (e) {}
+    }
+
+    function setupAutoRefresh() {
+        document.getElementById('autoRefresh').addEventListener('change', function() {
+            if (this.checked) {
+                autoRefreshTimer = setInterval(() => { loadData(); loadStats(); loadDailyChart(); }, 30000);
+            } else {
+                clearInterval(autoRefreshTimer);
+                autoRefreshTimer = null;
+            }
+        });
+    }
+
+    function stopAutoRefresh() {
+        if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+        document.getElementById('autoRefresh').checked = false;
+    }
+
+    function exportCSV() {
+        const params = new URLSearchParams();
+        const df = document.getElementById('dateFrom').value;
+        const dt = document.getElementById('dateTo').value;
+        const ph = document.getElementById('phoneFilter').value;
+        const smin = document.getElementById('speedMin').value;
+        const smax = document.getElementById('speedMax').value;
+        if (df) params.set('date_from', df);
+        if (dt) params.set('date_to', dt);
+        if (ph) params.set('phone', ph);
+        if (smin) params.set('speed_min', smin);
+        if (smax) params.set('speed_max', smax);
+
+        authFetch('/api/export?' + params.toString()).then(r => r.blob()).then(blob => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'aquafonometr_export.csv'; a.click();
+            URL.revokeObjectURL(url);
+        });
+    }
+
+    function applyFilters() { loadData(); loadStats(); loadDailyChart(); }
+
+    function clearFilters() {
+        document.getElementById('dateFrom').value = '';
+        document.getElementById('dateTo').value = '';
+        document.getElementById('phoneFilter').value = '';
+        document.getElementById('speedMin').value = '';
+        document.getElementById('speedMax').value = '';
+        loadData();
+        loadStats();
+        loadDailyChart();
+    }
+
+    async function checkExistingToken() {
+        const saved = localStorage.getItem('st_token');
+        if (!saved) return;
+        token = saved;
+        try {
+            const r = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
+            if (r.ok) {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+                initMap();
+                await loadBTS();
+                loadData();
+                loadStats();
+                loadDailyChart();
+                setupAutoRefresh();
+            } else {
+                doLogout();
+            }
+        } catch (e) {
+            doLogout();
+        }
+    }
+
+    document.getElementById('loginPass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+    document.getElementById('loginUser').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('loginPass').focus(); });
+
+    checkExistingToken();
+</script>
+</body>
+</html>

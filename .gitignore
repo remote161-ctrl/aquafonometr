@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.bak
+.env
+*.pem
+data/speedtest.db
+data/speedtest.db-wal
+data/speedtest.db-shm
+backups/
+*.log
