@@ -35,11 +35,34 @@ async def init_db():
                 password_hash TEXT NOT NULL
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                duration_sec INTEGER,
+                points_count INTEGER,
+                avg_download_speed REAL
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS track_points (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                download_speed REAL NOT NULL,
+                t_from INTEGER NOT NULL
+            )
+        """)
 
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_created ON tests(created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_phone ON tests(phone)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_speed ON tests(download_speed)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_coords ON tests(latitude, longitude)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_created ON tracks(created_at)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_phone ON tracks(phone)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_track_points_track ON track_points(track_id)")
 
         await db.commit()
 
@@ -155,3 +178,78 @@ async def get_daily_stats(days=7):
         )
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+async def insert_track(phone, points, duration_sec):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA foreign_keys=ON")
+        avg_speed = sum(p["download_speed"] for p in points) / len(points)
+        cursor = await db.execute(
+            "INSERT INTO tracks (phone, duration_sec, points_count, avg_download_speed) "
+            "VALUES (?, ?, ?, ?)",
+            (phone, duration_sec, len(points), round(avg_speed, 2))
+        )
+        track_id = cursor.lastrowid
+        await db.executemany(
+            "INSERT INTO track_points (track_id, latitude, longitude, download_speed, t_from) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [(track_id, p["latitude"], p["longitude"], round(p["download_speed"], 2), p.get("t_from", 0))
+             for p in points]
+        )
+        await db.commit()
+        return track_id
+
+
+async def get_tracks(date_from=None, date_to=None, phone=None, include_points=False):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        query = "SELECT * FROM tracks WHERE 1=1"
+        params = []
+
+        if date_from:
+            query += " AND created_at >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND created_at <= ?"
+            params.append(date_to + " 23:59:59")
+        if phone:
+            digits = ''.join(c for c in phone if c.isdigit())
+            if digits:
+                query += " AND REPLACE(REPLACE(REPLACE(REPLACE(phone, '-', ''), '(', ''), ')', ''), ' ', '') LIKE ?"
+                params.append(f"%{digits}%")
+
+        query += " ORDER BY created_at DESC"
+
+        cursor = await db.execute(query, params)
+        rows = await cursor.fetchall()
+        tracks = [dict(row) for row in rows]
+
+        if include_points and tracks:
+            for t in tracks:
+                pcursor = await db.execute(
+                    "SELECT latitude, longitude, download_speed, t_from "
+                    "FROM track_points WHERE track_id = ? ORDER BY t_from",
+                    (t["id"],)
+                )
+                prows = await pcursor.fetchall()
+                t["points"] = [dict(p) for p in prows]
+
+        return tracks
+
+
+async def get_track(track_id):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM tracks WHERE id = ?", (track_id,))
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        track = dict(row)
+        pcursor = await db.execute(
+            "SELECT latitude, longitude, download_speed, t_from "
+            "FROM track_points WHERE track_id = ? ORDER BY t_from",
+            (track_id,)
+        )
+        prows = await pcursor.fetchall()
+        track["points"] = [dict(p) for p in prows]
+        return track

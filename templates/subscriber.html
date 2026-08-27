@@ -140,6 +140,62 @@
         .btn-green:hover {
             background: #1e8449;
         }
+        .btn-danger {
+            background: #e74c3c;
+            color: #fff;
+        }
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        .mode-toggle {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .mode-btn {
+            padding: 10px;
+            border: 1px solid #dedede;
+            border-radius: 4px;
+            background: #fff;
+            color: #4a4a4a;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            text-transform: none;
+            transition: all 0.2s;
+        }
+        .mode-btn.active {
+            background: #3574a9;
+            border-color: #3574a9;
+            color: #fff;
+        }
+        .track-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .track-stat {
+            text-align: center;
+            padding: 12px 6px;
+            background: #f5f7f9;
+            border-radius: 4px;
+        }
+        .track-stat .value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #4a4a4a;
+        }
+        .track-stat .label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #9b9b9b;
+            margin-top: 2px;
+            letter-spacing: 0.5px;
+        }
         .progress-container {
             margin-bottom: 20px;
         }
@@ -285,6 +341,10 @@
         <div id="statusMsg"></div>
 
         <div class="card" id="inputCard">
+            <div class="mode-toggle">
+                <button class="mode-btn active" id="modeSingle">Одноразовый тест</button>
+                <button class="mode-btn" id="modeTrack">Трек движения</button>
+            </div>
             <div class="input-group">
                 <label>Номер телефона</label>
                 <input type="tel" id="phoneInput" value="+7 (940) " placeholder="+7 (940) XXX-XX-XX" autocomplete="tel" inputmode="tel" />
@@ -305,6 +365,14 @@
                 <div class="speed-label" id="speedLabel">СКАЧИВАНИЕ</div>
                 <div class="speed-value" id="speedValue">0</div>
                 <div class="speed-unit">Мбит/с</div>
+            </div>
+            <div class="track-stats hidden" id="trackStats">
+                <div class="track-stat"><div class="value" id="trackTime">00:00</div><div class="label">Время</div></div>
+                <div class="track-stat"><div class="value" id="trackPoints">0</div><div class="label">Точек</div></div>
+                <div class="track-stat"><div class="value" id="trackGps">—</div><div class="label">GPS получен</div></div>
+            </div>
+            <div style="text-align:center;" id="trackBtnWrap" class="hidden">
+                <button class="btn btn-danger" id="trackStopBtn">Стоп трек</button>
             </div>
             <div class="results-grid hidden" id="resultsGrid">
                 <div class="result-item down">
@@ -349,8 +417,15 @@
     <script src="/static/js/leaflet.js"></script>
     <script>
         let lat = null, lng = null, gpsReady = false;
-        let map = null, marker = null;
+        let map = null, marker = null, trackLayer = null;
         let downloadSpeed = 0, uploadSpeed = 0, pingValue = 0, jitterValue = 0;
+        let mode = 'single';
+        let trackActive = false;
+        let trackPoints = [];
+        let trackWatchId = null;
+        let trackStartTime = 0;
+        let trackTimerId = null;
+        let trackControllers = [];
 
         const phoneInput = document.getElementById('phoneInput');
         const startBtn = document.getElementById('startBtn');
@@ -426,6 +501,33 @@
                 'Джиттер: ' + jitterValue + ' мс'
             );
             map.setView([lat, lng], 15);
+            setTimeout(() => map.invalidateSize(), 200);
+        }
+
+        function updateTrackMap(points) {
+            if (!points || points.length < 2) return;
+            initMap();
+            if (marker) map.removeLayer(marker);
+            if (trackLayer) map.removeLayer(trackLayer);
+            trackLayer = L.layerGroup().addTo(map);
+            const latlngs = points.map(p => [p.latitude, p.longitude]);
+            for (let i = 0; i < points.length; i++) {
+                const color = getSpeedColor(points[i].download_speed);
+                if (i > 0) {
+                    L.polyline([latlngs[i - 1], latlngs[i]], {
+                        color: color, weight: 3, opacity: 0.9, smoothFactor: 1
+                    }).addTo(trackLayer);
+                }
+                L.circleMarker(latlngs[i], {
+                    radius: 4, fillColor: color, color: '#fff',
+                    weight: 1, opacity: 1, fillOpacity: 0.9
+                }).addTo(trackLayer).bindPopup(
+                    '<b>' + phoneInput.value + '</b><br>' +
+                    'Скорость: ' + points[i].download_speed.toFixed(1) + ' Мбит/с<br>' +
+                    'Время: ' + points[i].t_from + 'с'
+                );
+            }
+            map.fitBounds(latlngs, { padding: [20, 20] });
             setTimeout(() => map.invalidateSize(), 200);
         }
 
@@ -695,7 +797,182 @@
             link.click();
         }
 
-        startBtn.addEventListener('click', runTest);
+        function setMode(m) {
+            mode = m;
+            document.getElementById('modeSingle').classList.toggle('active', m === 'single');
+            document.getElementById('modeTrack').classList.toggle('active', m === 'track');
+            startBtn.textContent = m === 'track' ? 'Старт трека' : 'Начать тест';
+            startBtn.disabled = !gpsReady;
+        }
+        document.getElementById('modeSingle').addEventListener('click', () => setMode('single'));
+        document.getElementById('modeTrack').addEventListener('click', () => setMode('track'));
+
+        startBtn.addEventListener('click', () => {
+            if (mode === 'track') runTrack();
+            else runTest();
+        });
+        document.getElementById('trackStopBtn').addEventListener('click', stopTrack);
+
+        function fmtTrackTime(sec) {
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+
+        async function runTrack() {
+            const phone = phoneInput.value.replace(/\D/g, '');
+            if (phone.length < 10) { showStatus('Введите номер телефона', true); return; }
+
+            startBtn.disabled = true;
+            document.getElementById('inputCard').style.opacity = '0.5';
+            document.getElementById('testCard').classList.remove('hidden');
+            document.getElementById('historyCard').classList.add('hidden');
+            document.getElementById('mapCard').classList.add('hidden');
+            document.getElementById('doneCard').classList.add('hidden');
+            statusMsg.classList.add('hidden');
+            document.getElementById('qualityBadge').innerHTML = '';
+            document.getElementById('resultsGrid').classList.add('hidden');
+            document.getElementById('saveBtnWrap').classList.add('hidden');
+            document.getElementById('trackStats').classList.remove('hidden');
+            document.getElementById('trackBtnWrap').classList.remove('hidden');
+            progressText.textContent = 'Определение местоположения, 3с...';
+            progressFill.style.width = '10%';
+            speedLabel.textContent = 'СКОРОСТЬ DL';
+            speedValue.textContent = '0';
+            speedValue.style.color = '#4a4a4a';
+
+            let released = false;
+            try { await requestGPS(); } catch (e) { released = true; }
+
+            trackPoints = [];
+            trackActive = true;
+            trackStartTime = performance.now();
+            const windowMs = 3000;
+            const pointEverySec = 5;
+            let samples = [];
+            let currentMbps = 0;
+            let lastPointSec = 0;
+            let hadGps = gpsReady && lat !== null;
+            if (hadGps) document.getElementById('trackGps').textContent = 'да';
+            trackControllers = [];
+
+            if (navigator.geolocation) {
+                trackWatchId = navigator.geolocation.watchPosition(
+                    pos => {
+                        lat = pos.coords.latitude;
+                        lng = pos.coords.longitude;
+                        hadGps = true;
+                        document.getElementById('trackGps').textContent = 'да';
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }
+                );
+            }
+
+            const PARALLEL = 4;
+            const workers = [];
+            for (let i = 0; i < PARALLEL; i++) {
+                const ctrl = new AbortController();
+                trackControllers.push(ctrl);
+                workers.push((async () => {
+                    try {
+                        const resp = await fetch('/speedtest/stream?_=' + Date.now() + i, {
+                            cache: 'no-store', signal: ctrl.signal
+                        });
+                        const reader = resp.body.getReader();
+                        while (trackActive) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            samples.push({ t: (performance.now() - trackStartTime) / 1000, b: value.length });
+                        }
+                    } catch (e) {}
+                })());
+            }
+
+            while (trackActive && !released) {
+                await new Promise(r => setTimeout(r, 1000));
+                if (trackActive) {
+                    const rel = (performance.now() - trackStartTime) / 1000;
+                    const cutoff = rel - windowMs / 1000;
+                    let bytes = 0;
+                    const kept = [];
+                    for (const s of samples) {
+                        if (s.t >= cutoff) { bytes += s.b; kept.push(s); }
+                    }
+                    samples = kept;
+                    const windowDur = Math.min(windowMs / 1000, rel);
+                    currentMbps = windowDur > 0 ? (bytes * 8) / (windowDur * 1000000) : 0;
+                    speedValue.textContent = currentMbps >= 100 ? Math.round(currentMbps) : currentMbps.toFixed(1);
+                    speedValue.style.color = getSpeedColor(currentMbps);
+                    document.getElementById('trackTime').textContent = fmtTrackTime(rel);
+                    progressText.textContent = 'Трек идёт: ' + fmtTrackTime(rel) + ', ' + currentMbps.toFixed(1) + ' Мбит/с';
+
+                    if (hadGps && rel - lastPointSec >= pointEverySec) {
+                        trackPoints.push({
+                            latitude: lat, longitude: lng,
+                            download_speed: currentMbps,
+                            t_from: Math.floor(rel)
+                        });
+                        lastPointSec = rel;
+                        document.getElementById('trackPoints').textContent = trackPoints.length;
+                    }
+                }
+            }
+
+            trackActive = false;
+            trackControllers.forEach(c => { try { c.abort(); } catch (e) {} });
+            if (trackWatchId !== null) navigator.geolocation.clearWatch(trackWatchId);
+            await Promise.allSettled(workers);
+
+            document.getElementById('trackBtnWrap').classList.add('hidden');
+            document.getElementById('trackStats').classList.add('hidden');
+
+            if (released) {
+                showStatus('Ошибка: GPS не определён. Трек невозможен.', true);
+                resetAll();
+                return;
+            }
+            if (trackPoints.length < 2) {
+                showStatus('Трек слишком короткий (нужно минимум 2 точки). Увеличьте маршрут.', true);
+                resetAll();
+                return;
+            }
+
+            const durationSec = Math.floor((performance.now() - trackStartTime) / 1000);
+            progressText.textContent = 'Сохранение трека...';
+            progressFill.style.width = '90%';
+
+            const resp = await fetch('/api/track/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: phoneInput.value.trim(), points: trackPoints, duration_sec: durationSec })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.detail || 'Ошибка сервера');
+            }
+
+            progressFill.style.width = '100%';
+            const avg = trackPoints.reduce((a, p) => a + p.download_speed, 0) / trackPoints.length;
+            document.getElementById('resultDown').textContent = avg.toFixed(1);
+            document.getElementById('resultUp').textContent = trackPoints.length;
+            document.getElementById('resultPing').textContent = durationSec + 'с';
+            document.getElementById('resultJitter').textContent = trackPoints.length + ' точек';
+            document.getElementById('resultsGrid').classList.remove('hidden');
+
+            const q = getQuality(avg);
+            document.getElementById('qualityBadge').innerHTML =
+                '<div class="quality-badge ' + q.cls + '">' + q.text + '</div>';
+
+            document.getElementById('mapCard').classList.remove('hidden');
+            updateTrackMap(trackPoints);
+            document.getElementById('doneCard').classList.remove('hidden');
+            showStatus('Трек сохранён: ' + trackPoints.length + ' точек, средняя ' + avg.toFixed(1) + ' Мбит/с', false);
+        }
+
+        async function stopTrack() {
+            trackActive = false;
+        }
 
         async function runTest() {
             const phone = phoneInput.value.replace(/\D/g, '');
@@ -753,7 +1030,8 @@
                         longitude: lng || 0,
                         download_speed: downloadSpeed,
                         upload_speed: uploadSpeed,
-                        ping: pingValue
+                        ping: pingValue,
+                        jitter: jitterValue
                     })
                 });
                 if (!resp.ok) {
@@ -789,12 +1067,20 @@
         }
 
         function resetAll() {
+            if (trackActive) { trackActive = false; }
+            if (trackWatchId !== null) navigator.geolocation.clearWatch(trackWatchId);
+            trackWatchId = null;
+            trackControllers.forEach(c => { try { c.abort(); } catch (e) {} });
+            trackControllers = [];
+            trackPoints = [];
             document.getElementById('testCard').classList.add('hidden');
             document.getElementById('mapCard').classList.add('hidden');
             document.getElementById('doneCard').classList.add('hidden');
             document.getElementById('resultsGrid').classList.add('hidden');
             document.getElementById('qualityBadge').innerHTML = '';
             document.getElementById('saveBtnWrap').classList.add('hidden');
+            document.getElementById('trackStats').classList.add('hidden');
+            document.getElementById('trackBtnWrap').classList.add('hidden');
             statusMsg.classList.add('hidden');
             document.getElementById('inputCard').style.opacity = '1';
             progressFill.style.width = '0%';
@@ -807,6 +1093,7 @@
             gpsDot.classList.remove('active');
             gpsText.textContent = 'GPS не определён';
             startBtn.disabled = true;
+            startBtn.textContent = mode === 'track' ? 'Старт трека' : 'Начать тест';
             loadHistory();
             warmupGPS();
         }

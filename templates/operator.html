@@ -144,6 +144,12 @@
         </div>
         <div class="filter-row">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+                <input type="checkbox" id="showTracks" checked onchange="toggleTracks()" style="width:auto;" />
+                Показать треки
+            </label>
+        </div>
+        <div class="filter-row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
                 <input type="checkbox" id="autoRefresh" style="width:auto;" />
                 Автообновление (30с)
             </label>
@@ -182,6 +188,7 @@
         <div class="legend-item"><div class="legend-dot" style="background:#000"></div> &lt; 1 Мбит/с</div>
         <hr style="border:none;border-top:1px solid #dedede;margin:8px 0;">
         <div class="legend-item"><div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;"><img src="/static/img/tower.png" style="width:20px;height:20px;" /></div> Базовая станция</div>
+        <div class="legend-item"><div style="width:20px;height:3px;background:#3574a9;border-radius:2px;"></div> Трек движения</div>
     </div>
 </div>
 
@@ -198,6 +205,9 @@
     let btsVisible = true;
     let heatLayer = null;
     let heatVisible = true;
+    let trackLayer = L.layerGroup();
+    let trackVisible = true;
+    let filteredTracks = [];
     let speedChart = null;
     let autoRefreshTimer = null;
     let filteredMarkers = [];
@@ -264,6 +274,12 @@
         heatVisible = document.getElementById('showHeat').checked;
         if (heatVisible && heatLayer) { heatLayer.addTo(map); }
         else if (heatLayer) { map.removeLayer(heatLayer); }
+    }
+
+    function toggleTracks() {
+        trackVisible = document.getElementById('showTracks').checked;
+        if (trackVisible && trackLayer.getLayers().length) { trackLayer.addTo(map); }
+        else if (!trackVisible) { map.removeLayer(trackLayer); }
     }
 
     function updateHeat(tests) {
@@ -347,6 +363,68 @@
         const d = await r.json();
         renderMarkers(d.results);
         updateHeat(d.results);
+
+        const tparams = new URLSearchParams();
+        if (df) tparams.set('date_from', df);
+        if (dt) tparams.set('date_to', dt);
+        if (ph) tparams.set('phone', ph);
+        tparams.set('include_points', '1');
+        loadTracks(tparams.toString());
+    }
+
+    async function loadTracks(query) {
+        try {
+            const r = await authFetch('/api/tracks?' + query);
+            const d = await r.json();
+            renderTracks(d.tracks);
+        } catch (e) {}
+    }
+
+    function renderTracks(tracks) {
+        filteredTracks = tracks;
+        trackLayer.clearLayers();
+        if (tracks.length && trackVisible) {
+            trackLayer.addTo(map);
+        } else if (tracks.length) {
+            map.removeLayer(trackLayer);
+        }
+
+        tracks.forEach(t => {
+            const pts = t.points;
+            if (!pts || pts.length < 2) return;
+            const latlngs = pts.map(p => [p.latitude, p.longitude]);
+            const lineColor = getSpeedColor(t.avg_download_speed);
+            const date = t.created_at ? new Date(t.created_at).toLocaleString('ru-RU') : '\u2014';
+
+            const line = L.polyline(latlngs, {
+                color: lineColor, weight: 4, opacity: 0.7, smoothFactor: 1
+            });
+            line.bindPopup(
+                '<b>' + t.phone + '</b> \u2014 трек<br>' +
+                '\u2193 ср. ' + t.avg_download_speed.toFixed(1) + ' Мбит/с<br>' +
+                'Точек: ' + t.points_count + ' | Время: ' + t.duration_sec + 'с<br>' +
+                '<small>' + date + '</small>'
+            );
+            line.on('click', () => { map.fitBounds(latlngs, { padding: [40, 40] }); setTimeout(() => line.openPopup(), 200); });
+            trackLayer.addLayer(line);
+
+            pts.forEach((p, i) => {
+                const color = getSpeedColor(p.download_speed);
+                const icon = L.divIcon({
+                    className: '',
+                    html: '<div style="width:8px;height:8px;border-radius:2px;background:' + color + ';border:1.5px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.3);"></div>',
+                    iconSize: [8, 8],
+                    iconAnchor: [4, 4]
+                });
+                const m = L.marker([p.latitude, p.longitude], { icon: icon });
+                m.bindPopup(
+                    '<b>' + t.phone + '</b><br>' +
+                    '\u2193 ' + p.download_speed.toFixed(1) + ' Мбит/с<br>' +
+                    'Время: ' + p.t_from + 'с'
+                );
+                trackLayer.addLayer(m);
+            });
+        });
     }
 
     function renderMarkers(tests) {

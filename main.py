@@ -24,7 +24,7 @@ from config import (
 )
 from database import (
     init_db, insert_test, get_tests, verify_user, get_stats,
-    get_phone_history, get_daily_stats,
+    get_phone_history, get_daily_stats, insert_track, get_tracks,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -81,6 +81,7 @@ def _haversine(lat1, lon1, lat2, lon2):
 
 # --- Rate limiting ---
 _rate_limits = {}
+_track_rate_limits = {}
 
 
 def _check_rate_limit(ip):
@@ -89,6 +90,15 @@ def _check_rate_limit(ip):
     if now - last < RATE_LIMIT_SECONDS:
         return False, int(RATE_LIMIT_SECONDS - (now - last))
     _rate_limits[ip] = now
+    return True, 0
+
+
+def _check_track_rate_limit(ip):
+    now = time.time()
+    last = _track_rate_limits.get(ip, 0)
+    if now - last < 5:
+        return False, int(5 - (now - last))
+    _track_rate_limits[ip] = now
     return True, 0
 
 
@@ -137,6 +147,19 @@ class SubmitData(BaseModel):
     upload_speed: float
     ping: Optional[float] = None
     jitter: Optional[float] = None
+
+
+class TrackPoint(BaseModel):
+    latitude: float
+    longitude: float
+    download_speed: float
+    t_from: int = 0
+
+
+class TrackData(BaseModel):
+    phone: str
+    points: list[TrackPoint]
+    duration_sec: int = 0
 
 
 class LoginData(BaseModel):
@@ -208,6 +231,47 @@ async def results(
         phone=phone, speed_min=speed_min, speed_max=speed_max
     )
     return {"results": tests, "count": len(tests)}
+
+
+@app.post("/api/track/submit")
+async def track_submit(data: TrackData, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    allowed, wait = _check_track_rate_limit(client_ip)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=f"Too many requests. Wait {wait}s")
+
+    if not data.phone or len(data.phone) < 5:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+    if len(data.points) < 2:
+        raise HTTPException(status_code=400, detail="Track needs at least 2 points")
+    if len(data.points) > 1000:
+        raise HTTPException(status_code=400, detail="Track too long (max 1000 points)")
+    for p in data.points:
+        if p.download_speed < 0:
+            raise HTTPException(status_code=400, detail="Invalid speed value")
+
+    track_id = await insert_track(
+        phone=data.phone.strip(),
+        points=[p.model_dump() for p in data.points],
+        duration_sec=data.duration_sec,
+    )
+    logger.info(f"[TRACK] {data.phone} {len(data.points)} pts, {data.duration_sec}s from {client_ip}")
+    return {"status": "ok", "track_id": track_id}
+
+
+@app.get("/api/tracks")
+async def tracks_list(
+    user: str = Depends(get_current_user),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    phone: Optional[str] = Query(None),
+    include_points: int = Query(0),
+):
+    tracks = await get_tracks(
+        date_from=date_from, date_to=date_to,
+        phone=phone, include_points=bool(include_points),
+    )
+    return {"tracks": tracks, "count": len(tracks)}
 
 
 @app.get("/api/stats")
