@@ -801,8 +801,14 @@
             speedValue.textContent = '0';
             speedValue.style.color = '#4a4a4a';
             jitterValue = 0;
-            startBtn.disabled = false;
+            gpsReady = false;
+            lat = null;
+            lng = null;
+            gpsDot.classList.remove('active');
+            gpsText.textContent = 'GPS не определён';
+            startBtn.disabled = true;
             loadHistory();
+            warmupGPS();
         }
 
         loadHistory();
