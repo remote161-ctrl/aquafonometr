@@ -109,10 +109,10 @@ async def lifespan(application):
     os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
     await init_db()
     _load_bts_csv()
-    logger.info(f"[STARTUP] AQUAFONOMETR download={DOWNLOAD_SIZE_MB}MB upload={UPLOAD_SIZE_MB}MB")
+    logger.info(f"[STARTUP] AQUAMER download={DOWNLOAD_SIZE_MB}MB upload={UPLOAD_SIZE_MB}MB")
     yield
 
-app = FastAPI(title="AQUAFONOMETR", lifespan=lifespan)
+app = FastAPI(title="AQUAMER", lifespan=lifespan)
 
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
@@ -451,7 +451,7 @@ if __name__ == "__main__":
     ssl_key = os.path.join(BASE_DIR, "key.pem")
     use_ssl = os.path.isfile(ssl_cert) and os.path.isfile(ssl_key)
     proto = "https" if use_ssl else "http"
-    print(f"=== AQUAFONOMETR Server ===")
+    print(f"=== AQUAMER Server ===")
     print(f"Subscriber page: {proto}://{HOST}:{PORT}/")
     print(f"Operator page:   {proto}://{HOST}:{PORT}/operator")
     print(f"Default login:   admin / admin")
