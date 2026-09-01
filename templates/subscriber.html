@@ -426,6 +426,7 @@
         let trackStartTime = 0;
         let trackTimerId = null;
         let trackControllers = [];
+        let trackWakeLock = null;
 
         const phoneInput = document.getElementById('phoneInput');
         const startBtn = document.getElementById('startBtn');
@@ -813,6 +814,16 @@
         });
         document.getElementById('trackStopBtn').addEventListener('click', stopTrack);
 
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible' && trackActive) {
+                try {
+                    if ('wakeLock' in navigator) {
+                        trackWakeLock = await navigator.wakeLock.request('screen');
+                    }
+                } catch (e) {}
+            }
+        });
+
         function fmtTrackTime(sec) {
             const m = Math.floor(sec / 60);
             const s = Math.floor(sec % 60);
@@ -852,9 +863,16 @@
             let samples = [];
             let currentMbps = 0;
             let lastPointSec = 0;
+            let lastSampleT = 0;
             let hadGps = gpsReady && lat !== null;
             if (hadGps) document.getElementById('trackGps').textContent = 'да';
             trackControllers = [];
+
+            try {
+                if ('wakeLock' in navigator) {
+                    trackWakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (e) {}
 
             if (navigator.geolocation) {
                 trackWatchId = navigator.geolocation.watchPosition(
@@ -883,7 +901,8 @@
                         while (trackActive) {
                             const { done, value } = await reader.read();
                             if (done) break;
-                            samples.push({ t: (performance.now() - trackStartTime) / 1000, b: value.length });
+                            lastSampleT = (performance.now() - trackStartTime) / 1000;
+                            samples.push({ t: lastSampleT, b: value.length });
                         }
                     } catch (e) {}
                 })());
@@ -907,7 +926,8 @@
                     document.getElementById('trackTime').textContent = fmtTrackTime(rel);
                     progressText.textContent = 'Трек идёт: ' + fmtTrackTime(rel) + ', ' + currentMbps.toFixed(1) + ' Мбит/с';
 
-                    if (hadGps && rel - lastPointSec >= pointEverySec) {
+                    const fresh = lastSampleT >= rel - (windowMs / 1000) - 1.5;
+                    if (hadGps && fresh && rel - lastPointSec >= pointEverySec) {
                         trackPoints.push({
                             latitude: lat, longitude: lng,
                             download_speed: currentMbps,
@@ -922,6 +942,7 @@
             trackActive = false;
             trackControllers.forEach(c => { try { c.abort(); } catch (e) {} });
             if (trackWatchId !== null) navigator.geolocation.clearWatch(trackWatchId);
+            if (trackWakeLock) { try { await trackWakeLock.release(); } catch (e) {} trackWakeLock = null; }
             await Promise.allSettled(workers);
 
             document.getElementById('trackBtnWrap').classList.add('hidden');
@@ -972,6 +993,7 @@
 
         async function stopTrack() {
             trackActive = false;
+            if (trackWakeLock) { try { trackWakeLock.release(); } catch (e) {} trackWakeLock = null; }
         }
 
         async function runTest() {
