@@ -331,31 +331,34 @@
             return;
         }
 
-        // Разбиваем маршрут на непрерывные сегменты по времени (разрыв >= 60с => новый сегмент)
+        // Сегмент = непрерывный пробег точек одного цвета RSRP (разрывы времени >= 60с делят маршрут)
         const GAP_MS = 60000;
         const segs = [];
         let cur = [points[0]];
+        let curColor = getRsrpColor(points[0].rsrp);
         for (let i = 1; i < points.length; i++) {
             const prevT = Date.parse(points[i - 1].measured_at);
             const curT = Date.parse(points[i].measured_at);
-            if (isFinite(prevT) && isFinite(curT) && (curT - prevT) >= GAP_MS) {
-                segs.push(cur);
+            const colorChanged = getRsrpColor(points[i].rsrp) !== curColor;
+            const gapBreak = isFinite(prevT) && isFinite(curT) && (curT - prevT) >= GAP_MS;
+            if (colorChanged || gapBreak) {
+                if (cur.length >= 2) segs.push(cur);
                 cur = [points[i]];
+                curColor = getRsrpColor(points[i].rsrp);
             } else {
                 cur.push(points[i]);
             }
         }
-        segs.push(cur);
+        if (cur.length >= 2) segs.push(cur);
 
         segs.forEach(seg => {
-            if (seg.length < 2) return;
             const latlngs = seg.map(p => [p.latitude, p.longitude]);
+            const color = getRsrpColor(seg[0].rsrp);
             let sum = 0, cnt = 0;
             seg.forEach(p => { if (p.rsrp != null) { sum += p.rsrp; cnt++; } });
             const avgRsrp = cnt ? sum / cnt : -110;
-            const color = getRsrpColor(avgRsrp);
             const line = L.polyline(latlngs, {
-                color: color, weight: 2, opacity: 0.9, smoothFactor: 1
+                color: color, weight: 2, opacity: 0.9, smoothFactor: 0.5
             });
             const cell = seg[0].cell_id;
             line.bindPopup(
