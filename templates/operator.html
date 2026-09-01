@@ -337,10 +337,10 @@
     function initMap() {
         if (map) return;
         map = L.map('map', { zoomControl: false }).setView([43.0, 41.0], 8);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
-            attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19,
-            subdomains: 'abcd'
+            subdomains: 'abc'
         }).addTo(map);
         L.control.zoom({ position: 'topright' }).addTo(map);
     }
