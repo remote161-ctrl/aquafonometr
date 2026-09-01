@@ -150,6 +150,12 @@
         </div>
         <div class="filter-row">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+                <input type="checkbox" id="showTems" checked onchange="toggleTems()" style="width:auto;" />
+                Показать TEMS DT (RSRP)
+            </label>
+        </div>
+        <div class="filter-row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
                 <input type="checkbox" id="autoRefresh" style="width:auto;" />
                 Автообновление (30с)
             </label>
@@ -189,6 +195,13 @@
         <hr style="border:none;border-top:1px solid #dedede;margin:8px 0;">
         <div class="legend-item"><div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;"><img src="/static/img/tower.png" style="width:20px;height:20px;" /></div> Базовая станция</div>
         <div class="legend-item"><div style="width:20px;height:3px;background:#3574a9;border-radius:2px;"></div> Трек движения</div>
+        <hr style="border:none;border-top:1px solid #dedede;margin:8px 0;">
+        <div class="legend-item"><div class="legend-dot" style="background:#27ae60"></div> RSRP &ge; -80</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#a2d729"></div> RSRP -90 … -80</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> RSRP -100 … -90</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> RSRP -110 … -100</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7f1d1d"></div> RSRP &lt; -110</div>
+        <div class="legend-item"><div class="legend-dot" style="background:transparent;border:1px solid #999;"></div> TEMS DT (полевые замеры)</div>
     </div>
 </div>
 
@@ -207,6 +220,8 @@
     let heatVisible = true;
     let trackLayer = L.layerGroup();
     let trackVisible = true;
+    let temsVisible = true;
+    let temsGroup = L.markerClusterGroup({ maxClusterRadius: 45, spiderfyOnMaxZoom: true, showCoverageOnHover: true, disableClusteringAtZoom: 15 });
     let filteredTracks = [];
     let speedChart = null;
     let autoRefreshTimer = null;
@@ -226,6 +241,14 @@
         if (mbps >= 5)  return '#e67e22';
         if (mbps >= 1)  return '#e74c3c';
         return '#000000';
+    }
+
+    function getRsrpColor(rsrp) {
+        if (rsrp >= -80) return '#27ae60';
+        if (rsrp >= -90) return '#a2d729';
+        if (rsrp >= -100) return '#f39c12';
+        if (rsrp >= -110) return '#e74c3c';
+        return '#7f1d1d';
     }
 
     function haversine(lat1, lon1, lat2, lon2) {
@@ -280,6 +303,51 @@
         trackVisible = document.getElementById('showTracks').checked;
         if (trackVisible && trackLayer.getLayers().length) { trackLayer.addTo(map); }
         else if (!trackVisible) { map.removeLayer(trackLayer); }
+    }
+
+    function toggleTems() {
+        temsVisible = document.getElementById('showTems').checked;
+        if (temsVisible && temsGroup.getLayers().length) { temsGroup.addTo(map); }
+        else if (!temsVisible) { map.removeLayer(temsGroup); }
+    }
+
+    async function loadTems() {
+        try {
+            const df = document.getElementById('dateFrom').value;
+            const dt = document.getElementById('dateTo').value;
+            let params = new URLSearchParams();
+            if (df) params.set('date_from', df);
+            if (dt) params.set('date_to', dt);
+            const r = await authFetch('/api/tems?' + params.toString());
+            const d = await r.json();
+            renderTems(d.points);
+        } catch (e) {}
+    }
+
+    function renderTems(points) {
+        temsGroup.clearLayers();
+        points.forEach(p => {
+            const color = getRsrpColor(p.rsrp);
+            const icon = L.divIcon({
+                className: '',
+                html: '<div style="width:7px;height:7px;border-radius:50%;background:' + color + ';border:1px solid rgba(255,255,255,0.7);"></div>',
+                iconSize: [7, 7],
+                iconAnchor: [3, 3]
+            });
+            const m = L.marker([p.latitude, p.longitude], { icon: icon });
+            m.bindPopup(
+                '<b>TEMS DT</b><br>' +
+                '\u2193 RSRP: <b>' + p.rsrp.toFixed(1) + ' dBm</b><br>' +
+                'Cell ID: ' + p.cell_id + '<br>' +
+                '<small>' + (p.measured_at || '') + '</small>'
+            );
+            temsGroup.addLayer(m);
+        });
+        if (temsVisible && temsGroup.getLayers().length) {
+            temsGroup.addTo(map);
+        } else if (temsVisible) {
+            map.removeLayer(temsGroup);
+        }
     }
 
     function updateHeat(tests) {
@@ -370,6 +438,7 @@
         if (ph) tparams.set('phone', ph);
         tparams.set('include_points', '1');
         loadTracks(tparams.toString());
+        loadTems();
     }
 
     async function loadTracks(query) {

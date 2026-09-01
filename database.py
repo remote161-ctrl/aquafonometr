@@ -55,6 +55,17 @@ async def init_db():
                 t_from INTEGER NOT NULL
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tems_measurements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL DEFAULT 'TEMS',
+                measured_at TIMESTAMP NOT NULL,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                rsrp REAL,
+                cell_id TEXT
+            )
+        """)
 
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_created ON tests(created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tests_phone ON tests(phone)")
@@ -63,6 +74,9 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_created ON tracks(created_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tracks_phone ON tracks(phone)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_track_points_track ON track_points(track_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_tems_measured ON tems_measurements(measured_at)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_tems_coords ON tems_measurements(latitude, longitude)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_tems_cell ON tems_measurements(cell_id)")
 
         await db.commit()
 
@@ -253,3 +267,64 @@ async def get_track(track_id):
         prows = await pcursor.fetchall()
         track["points"] = [dict(p) for p in prows]
         return track
+
+
+async def insert_tems_measurements(rows):
+    """Bulk insert TEMS measurements. rows: list of dicts."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            "INSERT INTO tems_measurements (source, measured_at, latitude, longitude, rsrp, cell_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [(r.get("source", "TEMS"), r["measured_at"], r["latitude"], r["longitude"],
+              r.get("rsrp"), r.get("cell_id")) for r in rows]
+        )
+        await db.commit()
+
+
+async def get_tems(date_from=None, date_to=None, cell_id=None, source=None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        query = "SELECT * FROM tems_measurements WHERE 1=1"
+        params = []
+
+        if date_from:
+            query += " AND measured_at >= ?"
+            params.append(date_from)
+        if date_to:
+            query += " AND measured_at <= ?"
+            params.append(date_to + " 23:59:59")
+        if cell_id:
+            query += " AND cell_id = ?"
+            params.append(str(cell_id))
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+
+        query += " ORDER BY measured_at ASC"
+
+        cursor = await db.execute(query, params)
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_tems_cells():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT cell_id, COUNT(*) as cnt, MIN(rsrp) as min_rsrp, MAX(rsrp) as max_rsrp, "
+            "AVG(rsrp) as avg_rsrp FROM tems_measurements "
+            "GROUP BY cell_id ORDER BY cnt DESC"
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_tems_stats():
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT COUNT(*) as total, MIN(rsrp) as min_rsrp, MAX(rsrp) as max_rsrp, "
+            "AVG(rsrp) as avg_rsrp FROM tems_measurements"
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {}

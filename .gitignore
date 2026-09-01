@@ -11,3 +11,4 @@ data/aquafonometr.db-wal
 data/aquafonometr.db-shm
 backups/
 *.log
+Table_View_*.txt

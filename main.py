@@ -25,6 +25,7 @@ from config import (
 from database import (
     init_db, insert_test, get_tests, verify_user, get_stats,
     get_phone_history, get_daily_stats, insert_track, get_tracks,
+    get_tems, get_tems_cells, get_tems_stats,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -272,6 +273,29 @@ async def tracks_list(
         phone=phone, include_points=bool(include_points),
     )
     return {"tracks": tracks, "count": len(tracks)}
+
+
+@app.get("/api/tems")
+async def tems_list(
+    user: str = Depends(get_current_user),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    cell_id: Optional[str] = Query(None),
+):
+    points = await get_tems(
+        date_from=date_from, date_to=date_to, cell_id=cell_id,
+    )
+    return {"points": points, "count": len(points)}
+
+
+@app.get("/api/tems/cells")
+async def tems_cells(user: str = Depends(get_current_user)):
+    return {"cells": await get_tems_cells()}
+
+
+@app.get("/api/tems/stats")
+async def tems_stats(user: str = Depends(get_current_user)):
+    return await get_tems_stats()
 
 
 @app.get("/api/stats")
