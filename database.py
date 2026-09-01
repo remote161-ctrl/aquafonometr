@@ -63,6 +63,7 @@ async def init_db():
                 latitude REAL NOT NULL,
                 longitude REAL NOT NULL,
                 rsrp REAL,
+                throughput_kbps REAL,
                 cell_id TEXT
             )
         """)
@@ -77,6 +78,12 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tems_measured ON tems_measurements(measured_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tems_coords ON tems_measurements(latitude, longitude)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_tems_cell ON tems_measurements(cell_id)")
+
+        tems_cols = await db.execute("PRAGMA table_info(tems_measurements)")
+        tems_cols_rows = await tems_cols.fetchall()
+        tems_has_throughput = any(r[1] == "throughput_kbps" for r in tems_cols_rows)
+        if not tems_has_throughput:
+            await db.execute("ALTER TABLE tems_measurements ADD COLUMN throughput_kbps REAL")
 
         await db.commit()
 
@@ -273,10 +280,10 @@ async def insert_tems_measurements(rows):
     """Bulk insert TEMS measurements. rows: list of dicts."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executemany(
-            "INSERT INTO tems_measurements (source, measured_at, latitude, longitude, rsrp, cell_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tems_measurements (source, measured_at, latitude, longitude, rsrp, throughput_kbps, cell_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             [(r.get("source", "TEMS"), r["measured_at"], r["latitude"], r["longitude"],
-              r.get("rsrp"), r.get("cell_id")) for r in rows]
+              r.get("rsrp"), r.get("throughput_kbps"), r.get("cell_id")) for r in rows]
         )
         await db.commit()
 

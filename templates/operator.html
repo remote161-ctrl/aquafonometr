@@ -156,6 +156,12 @@
         </div>
         <div class="filter-row">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
+                <input type="checkbox" id="showTemsThr" checked onchange="toggleTemsThr()" style="width:auto;" />
+                Показать TEMS DT (Throughput)
+            </label>
+        </div>
+        <div class="filter-row">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:13px;">
                 <input type="checkbox" id="autoRefresh" style="width:auto;" />
                 Автообновление (30с)
             </label>
@@ -202,6 +208,13 @@
         <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> RSRP -110 … -100</div>
         <div class="legend-item"><div class="legend-dot" style="background:#7f1d1d"></div> RSRP &lt; -110</div>
         <div class="legend-item"><div style="width:20px;height:2.5px;background:#999;border-radius:2px;"></div> TEMS DT маршрут (ср. RSRP)</div>
+        <hr style="border:none;border-top:1px solid #dedede;margin:8px 0;">
+        <div class="legend-item"><div style="width:20px;height:3px;background:#27ae60;border-radius:2px;display:inline-block;"></div> Throughput &ge; 50 Мбит/с</div>
+        <div class="legend-item"><div style="width:20px;height:3px;background:#f39c12;border-radius:2px;display:inline-block;"></div> Throughput 20–50 Мбит/с</div>
+        <div class="legend-item"><div style="width:20px;height:3px;background:#e67e22;border-radius:2px;display:inline-block;"></div> Throughput 5–20 Мбит/с</div>
+        <div class="legend-item"><div style="width:20px;height:3px;background:#e74c3c;border-radius:2px;display:inline-block;"></div> Throughput 1–5 Мбит/с</div>
+        <div class="legend-item"><div style="width:20px;height:3px;background:#000;border-radius:2px;display:inline-block;"></div> Throughput &lt; 1 Мбит/с</div>
+        <div class="legend-item"><div style="width:20px;height:3px;background:#999;border-radius:2px;"></div> TEMS DT маршрут (ср. скорость)</div>
     </div>
 </div>
 
@@ -222,6 +235,8 @@
     let trackVisible = true;
     let temsVisible = true;
     let temsLayer = L.layerGroup();
+    let temsThrVisible = true;
+    let temsThrLayer = L.layerGroup();
     let filteredTracks = [];
     let speedChart = null;
     let autoRefreshTimer = null;
@@ -311,6 +326,12 @@
         else if (!temsVisible) { map.removeLayer(temsLayer); }
     }
 
+    function toggleTemsThr() {
+        temsThrVisible = document.getElementById('showTemsThr').checked;
+        if (temsThrVisible && temsThrLayer.getLayers().length) { temsThrLayer.addTo(map); }
+        else if (!temsThrVisible) { map.removeLayer(temsThrLayer); }
+    }
+
     async function loadTems() {
         try {
             const df = document.getElementById('dateFrom').value;
@@ -321,7 +342,31 @@
             const r = await authFetch('/api/tems?' + params.toString());
             const d = await r.json();
             renderTems(d.points);
+            renderTemsThr(d.points);
         } catch (e) {}
+    }
+
+    function splitTemsSegs(points, valueOf) {
+        // Сегмент = непрерывный пробег точек одного цвета по valueOf (разрывы времени >= 60с делят маршрут)
+        const GAP_MS = 60000;
+        const segs = [];
+        let cur = [points[0]];
+        let curColor = valueOf(points[0]);
+        for (let i = 1; i < points.length; i++) {
+            const prevT = Date.parse(points[i - 1].measured_at);
+            const curT = Date.parse(points[i].measured_at);
+            const colorChanged = valueOf(points[i]) !== curColor;
+            const gapBreak = isFinite(prevT) && isFinite(curT) && (curT - prevT) >= GAP_MS;
+            if (colorChanged || gapBreak) {
+                if (cur.length >= 2) segs.push(cur);
+                cur = [points[i]];
+                curColor = valueOf(points[i]);
+            } else {
+                cur.push(points[i]);
+            }
+        }
+        if (cur.length >= 2) segs.push(cur);
+        return segs;
     }
 
     function renderTems(points) {
@@ -331,26 +376,7 @@
             return;
         }
 
-        // Сегмент = непрерывный пробег точек одного цвета RSRP (разрывы времени >= 60с делят маршрут)
-        const GAP_MS = 60000;
-        const segs = [];
-        let cur = [points[0]];
-        let curColor = getRsrpColor(points[0].rsrp);
-        for (let i = 1; i < points.length; i++) {
-            const prevT = Date.parse(points[i - 1].measured_at);
-            const curT = Date.parse(points[i].measured_at);
-            const colorChanged = getRsrpColor(points[i].rsrp) !== curColor;
-            const gapBreak = isFinite(prevT) && isFinite(curT) && (curT - prevT) >= GAP_MS;
-            if (colorChanged || gapBreak) {
-                if (cur.length >= 2) segs.push(cur);
-                cur = [points[i]];
-                curColor = getRsrpColor(points[i].rsrp);
-            } else {
-                cur.push(points[i]);
-            }
-        }
-        if (cur.length >= 2) segs.push(cur);
-
+        const segs = splitTemsSegs(points, p => getRsrpColor(p.rsrp));
         segs.forEach(seg => {
             const latlngs = seg.map(p => [p.latitude, p.longitude]);
             const color = getRsrpColor(seg[0].rsrp);
@@ -375,6 +401,40 @@
             temsLayer.addTo(map);
         } else if (temsVisible) {
             map.removeLayer(temsLayer);
+        }
+    }
+
+    function renderTemsThr(points) {
+        temsThrLayer.clearLayers();
+        const usable = points.filter(p => p.throughput_kbps != null);
+        if (!usable.length) {
+            if (temsThrVisible) map.removeLayer(temsThrLayer);
+            return;
+        }
+
+        const segs = splitTemsSegs(usable, p => getSpeedColor(p.throughput_kbps / 1000));
+        segs.forEach(seg => {
+            const latlngs = seg.map(p => [p.latitude, p.longitude]);
+            const avgMbps = seg.reduce((s, p) => s + p.throughput_kbps / 1000, 0) / seg.length;
+            const color = getSpeedColor(avgMbps);
+            const line = L.polyline(latlngs, {
+                color: color, weight: 3, opacity: 0.85, smoothFactor: 0.5
+            });
+            const cell = seg[0].cell_id;
+            line.bindPopup(
+                '<b>TEMS Throughput</b><br>' +
+                '\u2193 Скорость: <b>' + avgMbps.toFixed(1) + ' Мбит/с</b> (ср.)<br>' +
+                'Cell ID: ' + cell + '<br>' +
+                'Точек: ' + seg.length + '<br>' +
+                '<small>' + (seg[0].measured_at || '') + '</small>'
+            );
+            temsThrLayer.addLayer(line);
+        });
+
+        if (temsThrVisible && temsThrLayer.getLayers().length) {
+            temsThrLayer.addTo(map);
+        } else if (temsThrVisible) {
+            map.removeLayer(temsThrLayer);
         }
     }
 
