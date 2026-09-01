@@ -201,7 +201,7 @@
         <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> RSRP -100 … -90</div>
         <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> RSRP -110 … -100</div>
         <div class="legend-item"><div class="legend-dot" style="background:#7f1d1d"></div> RSRP &lt; -110</div>
-        <div class="legend-item"><div class="legend-dot" style="background:transparent;border:1px solid #999;"></div> TEMS DT (полевые замеры)</div>
+        <div class="legend-item"><div style="width:20px;height:2.5px;background:#999;border-radius:2px;"></div> TEMS DT маршрут (ср. RSRP)</div>
     </div>
 </div>
 
@@ -221,7 +221,7 @@
     let trackLayer = L.layerGroup();
     let trackVisible = true;
     let temsVisible = true;
-    let temsGroup = L.markerClusterGroup({ maxClusterRadius: 45, spiderfyOnMaxZoom: true, showCoverageOnHover: true, disableClusteringAtZoom: 15 });
+    let temsLayer = L.layerGroup();
     let filteredTracks = [];
     let speedChart = null;
     let autoRefreshTimer = null;
@@ -307,8 +307,8 @@
 
     function toggleTems() {
         temsVisible = document.getElementById('showTems').checked;
-        if (temsVisible && temsGroup.getLayers().length) { temsGroup.addTo(map); }
-        else if (!temsVisible) { map.removeLayer(temsGroup); }
+        if (temsVisible && temsLayer.getLayers().length) { temsLayer.addTo(map); }
+        else if (!temsVisible) { map.removeLayer(temsLayer); }
     }
 
     async function loadTems() {
@@ -325,28 +325,53 @@
     }
 
     function renderTems(points) {
-        temsGroup.clearLayers();
-        points.forEach(p => {
-            const color = getRsrpColor(p.rsrp);
-            const icon = L.divIcon({
-                className: '',
-                html: '<div style="width:7px;height:7px;border-radius:50%;background:' + color + ';border:1px solid rgba(255,255,255,0.7);"></div>',
-                iconSize: [7, 7],
-                iconAnchor: [3, 3]
+        temsLayer.clearLayers();
+        if (!points || points.length < 2) {
+            if (temsVisible) map.removeLayer(temsLayer);
+            return;
+        }
+
+        // Разбиваем маршрут на непрерывные сегменты по времени (разрыв >= 60с => новый сегмент)
+        const GAP_MS = 60000;
+        const segs = [];
+        let cur = [points[0]];
+        for (let i = 1; i < points.length; i++) {
+            const prevT = Date.parse(points[i - 1].measured_at);
+            const curT = Date.parse(points[i].measured_at);
+            if (isFinite(prevT) && isFinite(curT) && (curT - prevT) >= GAP_MS) {
+                segs.push(cur);
+                cur = [points[i]];
+            } else {
+                cur.push(points[i]);
+            }
+        }
+        segs.push(cur);
+
+        segs.forEach(seg => {
+            if (seg.length < 2) return;
+            const latlngs = seg.map(p => [p.latitude, p.longitude]);
+            let sum = 0, cnt = 0;
+            seg.forEach(p => { if (p.rsrp != null) { sum += p.rsrp; cnt++; } });
+            const avgRsrp = cnt ? sum / cnt : -110;
+            const color = getRsrpColor(avgRsrp);
+            const line = L.polyline(latlngs, {
+                color: color, weight: 2, opacity: 0.9, smoothFactor: 1
             });
-            const m = L.marker([p.latitude, p.longitude], { icon: icon });
-            m.bindPopup(
+            const cell = seg[0].cell_id;
+            line.bindPopup(
                 '<b>TEMS DT</b><br>' +
-                '\u2193 RSRP: <b>' + p.rsrp.toFixed(1) + ' dBm</b><br>' +
-                'Cell ID: ' + p.cell_id + '<br>' +
-                '<small>' + (p.measured_at || '') + '</small>'
+                'RSRP: <b>' + avgRsrp.toFixed(1) + ' dBm</b> (ср.)<br>' +
+                'Cell ID: ' + cell + '<br>' +
+                'Точек: ' + seg.length + '<br>' +
+                '<small>' + (seg[0].measured_at || '') + '</small>'
             );
-            temsGroup.addLayer(m);
+            temsLayer.addLayer(line);
         });
-        if (temsVisible && temsGroup.getLayers().length) {
-            temsGroup.addTo(map);
+
+        if (temsVisible && temsLayer.getLayers().length) {
+            temsLayer.addTo(map);
         } else if (temsVisible) {
-            map.removeLayer(temsGroup);
+            map.removeLayer(temsLayer);
         }
     }
 
