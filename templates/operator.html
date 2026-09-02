@@ -625,7 +625,7 @@
         let html = '<h4>Результаты (' + filteredTests.length + ')</h4><div class="results-scroll">';
         filteredTests.forEach((t, idx) => {
             const color = getSpeedColor(t.download_speed);
-            const date = t.created_at ? new Date(t.created_at).toLocaleDateString('ru-RU') : '';
+            const date = t.created_at ? new Date(t.created_at).toLocaleString('ru-RU') : '';
             html += '<div class="result-row" onclick="showOnMap(' + idx + ')">' +
                 '<div class="r-dot" style="background:' + color + '"></div>' +
                 '<div class="r-info"><div class="r-phone">' + t.phone + '</div><div class="r-date">' + date + '</div></div>' +
